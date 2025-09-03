@@ -32,14 +32,21 @@
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const base = location.origin;
 
-  function parseNumber(text) {
-    if (!text) return NaN;
-    let s = String(text).replace(/\s+/g, '');
-    // Remove thousand separators but keep decimal point or comma as decimal separator
+ function parseNumber(text) {
+  if (!text) return NaN;
+  // remove NBSP and trim
+  let s = text.replace(/\u00A0/g, ' ').trim();
+  // remove any currency symbols or letters
+  s = s.replace(/[^\d.,-]/g, '');
+  // if it contains comma as thousands separator, drop commas
+  if (/,/.test(s) && /\d{1,3}(,\d{3})+/.test(s)) {
     s = s.replace(/,/g, '');
-    const num = Number(s);
-    return Number.isNaN(num) ? NaN : num;
   }
+  // normalize decimal comma to dot
+  s = s.replace(',', '.');
+  const num = parseFloat(s);
+  return Number.isNaN(num) ? NaN : num;
+}
 
   const parseTable = (doc) => {
     const tables = [...doc.querySelectorAll('table')];
@@ -135,6 +142,8 @@
         </div>`).join('')}
     `;
   };
+
+  console.log("Row check:", it.name, "Mas=", it.mas, "Price raw=", tr.cells[idx.price]?.innerHTML, "parsed=", it.price);
 
   // ===== Crawl & filter =====
   (async () => {
