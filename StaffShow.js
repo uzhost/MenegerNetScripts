@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         MeneGer Staff: Show Only Talent = 3 (Coach/GK/Phys)
+// @name         MeneGer Staff: Show Only Talent = 3 (Coach/GK/Phys) + Toggle
 // @namespace    http://tampermonkey.net/
 // @version      2025-09-29
-// @description  Crawl staff lists (Coach, Goalkeeping Coach, Physiotherapist) and show only Tal=3, keeping original order.
+// @description  Crawl staff lists (Coach, Goalkeeping Coach, Physiotherapist - 'Coach', 'gCoach', 'Phys') and show only Tal=3, keeping original order. Includes Show/Hide toggle.
 // @match        https://meneger.net/staffs*
 // @match        https://www.meneger.net/staffs*
 // @grant        none
@@ -14,8 +14,8 @@
   'use strict';
 
   // ---- CONFIG ----
-  const POS_TARGETS = ['Coach', 'gCoach', 'Phys']; // pages to scan
-  const TAL_TARGET = 3;                             // show only Tal == 3
+  const POS_TARGETS = ['gCoach']; // pages to scan 'Coach', 'gCoach', 'Phys'
+  const TAL_TARGET = 3;           // show only Tal == 3
   const PAGE_DELAY_MS = 250;
   const ROLE_DELAY_MS = 400;
   const MAX_PAGES = 2000;
@@ -30,9 +30,8 @@
     return m ? Number(m[0]) : NaN;
   };
 
-  // find the staff table (works with the page shown in your screenshot)
+  // find the staff table
   function findStaffTable(doc) {
-    // prefer id="example"
     const preferred = doc.querySelector('table#example');
     if (preferred) {
       const head = preferred.tHead?.rows?.[0] || preferred.querySelector('thead tr') || preferred.querySelector('tr');
@@ -50,7 +49,6 @@
         if (idx.pos !== -1 && idx.tal !== -1) return { table: preferred, idx };
       }
     }
-    // fallback: scan all tables
     const tables = [...doc.querySelectorAll('table')];
     for (const table of tables) {
       const head = table.tHead?.rows?.[0] || table.querySelector('thead tr') || table.querySelector('tr');
@@ -122,16 +120,33 @@
     }
   }
 
-  // minimal panel
+  // --- Toggle button (bottom-right) ---
+  function ensureToggleButton() {
+    let btn = document.getElementById('staffTal3Toggle');
+    if (btn) return btn;
+    btn = document.createElement('button');
+    btn.id = 'staffTal3Toggle';
+    btn.textContent = 'Show Talent=3';
+    btn.style.cssText = `
+      position:fixed; right:16px; bottom:16px; z-index:1000000;
+      background:#2ea043; color:#fff; padding:8px 12px;
+      border:none; border-radius:8px; cursor:pointer; box-shadow:0 6px 16px rgba(0,0,0,.3);
+    `;
+    document.body.appendChild(btn);
+    return btn;
+  }
+
+  // minimal panel (hidden by default)
   function renderPanel(list, scanned, done) {
     let panel = document.getElementById('staffTal3Panel');
     if (!panel) {
       panel = document.createElement('div');
       panel.id = 'staffTal3Panel';
       panel.style.cssText = `
-        position:fixed; right:16px; bottom:16px; width:720px; max-height:72vh; overflow:auto;
+        position:fixed; right:16px; bottom:64px; width:720px; max-height:72vh; overflow:auto;
         background:#111; color:#fff; font:14px/1.4 system-ui,Segoe UI,Arial;
         border-radius:12px; box-shadow:0 12px 30px rgba(0,0,0,.35); padding:14px; z-index:999999;
+        display:none;
       `;
       document.body.appendChild(panel);
     }
@@ -148,6 +163,8 @@
         <span style="opacity:.8">— ${list.length} matches (scanned ~${scanned})${done?' ✓':''}</span>
         <a href="${url}" download="staff_talent_${TAL_TARGET}.csv"
            style="margin-left:auto;background:#2ea043;color:#fff;text-decoration:none;padding:6px 10px;border-radius:8px">Download CSV</a>
+        <button id="staffTal3Close" title="Hide panel (T)"
+           style="margin-left:8px;background:#444;color:#fff;border:none;border-radius:8px;padding:6px 10px;cursor:pointer">×</button>
       </div>
       <div>
         ${list.slice(0,800).map((r,i)=>`
@@ -165,6 +182,34 @@
         `).join('')}
       </div>
     `;
+
+    // Hook up the close button & toggle button
+    const toggle = ensureToggleButton();
+    const setBtnLabel = () => toggle.textContent = (panel.style.display === 'none' ? 'Show Talent=3' : 'Hide Talent=3');
+
+    document.getElementById('staffTal3Close').onclick = () => {
+      panel.style.display = 'none';
+      setBtnLabel();
+    };
+
+    // Only set the onclick once
+    if (!toggle.dataset.bound) {
+      toggle.onclick = () => {
+        panel.style.display = (panel.style.display === 'none' ? 'block' : 'none');
+        setBtnLabel();
+      };
+      // Keyboard shortcut: press "T" to toggle
+      window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 't' && !/input|textarea|select/i.test(e.target.tagName)) {
+          e.preventDefault();
+          toggle.click();
+        }
+      });
+      toggle.dataset.bound = '1';
+    }
+
+    // keep button label in sync
+    setBtnLabel();
   }
 
   // ---- MAIN ----
@@ -177,6 +222,9 @@
 
     const results = [];   // keep original crawl order
     let scanned = 0;
+
+    // Prepare toggle immediately so you can show panel even before crawl finishes
+    ensureToggleButton();
 
     // highlight Tal=3 on the page you're viewing
     highlightTal3OnPage();
